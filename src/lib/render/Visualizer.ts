@@ -1,14 +1,20 @@
 import { clamp, easeOutCubic, hash01, hashString, mulberry32 } from "./random";
 import { getActiveWordIndex } from "../timing";
 import type {
+  CanvasFont,
   CanvasFormat,
+  FontWeight,
   LyricLine,
   LyricsDoc,
   StyleSettings,
   TimedWord,
+  VisualTheme,
 } from "../types";
 import { BackgroundRenderer } from "./background";
-import { DistressedTextRenderer, type RenderedWord } from "./distressedText";
+import {
+  DistressedTextRenderer,
+  FONT_STACKS,
+} from "./distressedText";
 import { canvasSize } from "./formats";
 import { GlitchRenderer, type GlitchEvent } from "./glitch";
 import { getWordColor } from "./palette";
@@ -29,41 +35,32 @@ function makeCanvas(width: number, height: number) {
   return canvas;
 }
 
-function animationState(animation: StyleSettings["animation"], age: number) {
-  if (animation === "cut") return { scale: 1, alpha: 1 };
-
-  if (animation === "fade") {
-    const progress = easeOutCubic(clamp(age / 0.24, 0, 1));
-    return { scale: 1.035 - progress * 0.035, alpha: progress };
-  }
-
-  const progress = clamp(age / 0.18, 0, 1);
-  let scale: number;
-  if (progress < 0.62) {
-    const first = easeOutCubic(progress / 0.62);
-    scale = 0.82 + (1.035 - 0.82) * first;
-  } else {
-    const second = easeOutCubic((progress - 0.62) / 0.38);
-    scale = 1.035 - 0.035 * second;
-  }
-  return { scale, alpha: clamp(age / 0.06, 0, 1) };
+interface PlainMetrics {
+  width: number;
+  ascent: number;
+  descent: number;
 }
 
-interface TextCell {
-  word: TimedWord;
-  rendered: RenderedWord;
-  active: boolean;
-  alpha: number;
-}
-
-interface LineDrawOptions {
-  activeWordId?: string;
-  centerY: number;
-  maxWidth: number;
-  maxHeight: number;
-  scaleCap: number;
-  alpha: number;
-  entrance: { scale: number; alpha: number };
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.arcTo(x + w, y, x + w, y + radius, radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+  ctx.lineTo(x + radius, y + h);
+  ctx.arcTo(x, y + h, x, y + h - radius, radius);
+  ctx.lineTo(x, y + radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
 }
 
 export class Visualizer {
@@ -77,6 +74,8 @@ export class Visualizer {
   private glitch: GlitchRenderer;
   private ctx: CanvasRenderingContext2D;
   private sceneCtx: CanvasRenderingContext2D;
+  private measureCanvas: HTMLCanvasElement;
+  private measureCtx: CanvasRenderingContext2D | null;
   private lastSettings: StyleSettings | null = null;
   private lastActive = -2;
   private lastDocSignature = "";
@@ -94,6 +93,8 @@ export class Visualizer {
     this.background = new BackgroundRenderer(this.width, this.height);
     this.rain = new RainSystem(this.width, this.height);
     this.glitch = new GlitchRenderer(this.width, this.height);
+    this.measureCanvas = makeCanvas(8, 8);
+    this.measureCtx = this.measureCanvas.getContext("2d");
 
     canvas.width = this.width;
     canvas.height = this.height;
@@ -106,6 +107,38 @@ export class Visualizer {
     this.ctx.imageSmoothingQuality = "high";
     this.sceneCtx.imageSmoothingEnabled = true;
     this.sceneCtx.imageSmoothingQuality = "high";
+  }
+
+  // ---------------------------------------------------------------- plain type
+
+  private setPlainFont(
+    ctx: CanvasRenderingContext2D,
+    family: CanvasFont,
+    size: number,
+    weight: FontWeight,
+    letterSpacing: number,
+  ) {
+    ctx.font = `${weight} ${size}px ${FONT_STACKS[family]}`;
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing =
+      `${letterSpacing * size}px`;
+  }
+
+  private measurePlain(
+    text: string,
+    family: CanvasFont,
+    size: number,
+    weight: FontWeight,
+    letterSpacing: number,
+  ): PlainMetrics {
+    const ctx = this.measureCtx;
+    if (!ctx) return { width: text.length * size * 0.6, ascent: size * 0.82, descent: size * 0.32 };
+    this.setPlainFont(ctx, family, size, weight, letterSpacing);
+    const metrics = ctx.measureText(text);
+    return {
+      width: metrics.width,
+      ascent: metrics.actualBoundingBoxAscent || size * 0.82,
+      descent: Math.abs(metrics.actualBoundingBoxDescent) || size * 0.32,
+    };
   }
 
   private applySettings(settings: StyleSettings) {
@@ -124,62 +157,9 @@ export class Visualizer {
     this.lastSettings = settings;
   }
 
-  private accentColor(word: TimedWord, settings: StyleSettings) {
-    if (word.color) return word.color;
-    return settings.colorMode === "white" ? settings.colorB : settings.colorA;
-  }
+  // ------------------------------------------------------- 1. Raakh Grunge
 
-  private baseColor(word: TimedWord, settings: StyleSettings) {
-    if (word.color) return word.color;
-    return settings.colorB;
-  }
-
-  private drawWord(
-    word: TimedWord,
-    activeIndex: number,
-    settings: StyleSettings,
-    time: number,
-  ) {
-    const age = Math.max(0, time - word.start);
-    const animation = animationState(settings.animation, age);
-
-    if (settings.theme === "riso-register") {
-      const pink = this.text.get(
-        word.text,
-        settings.colorA,
-        settings.fontSize,
-        settings.fontWeight,
-        settings.grit,
-      );
-      const teal = this.text.get(
-        word.text,
-        settings.colorB,
-        settings.fontSize,
-        settings.fontWeight,
-        settings.grit,
-      );
-      const offset = Math.min(this.width, this.height) * 0.012;
-      const maxWidth = this.width * 0.88;
-      const maxHeight = this.height * 0.42;
-      const fit = Math.min(
-        1,
-        maxWidth / Math.max(1, pink.logicalWidth),
-        maxHeight / Math.max(1, pink.logicalHeight),
-      );
-      const width = pink.logicalWidth * fit;
-      const height = pink.logicalHeight * fit;
-
-      this.sceneCtx.save();
-      this.sceneCtx.translate(this.width / 2, this.height / 2);
-      this.sceneCtx.scale(animation.scale, animation.scale);
-      this.sceneCtx.globalAlpha = animation.alpha;
-      this.applyTextGlow(settings);
-      this.sceneCtx.drawImage(teal.canvas, -width / 2 + offset, -height / 2 + offset * 0.35, width, height);
-      this.sceneCtx.drawImage(pink.canvas, -width / 2 - offset * 0.6, -height / 2 - offset * 0.28, width, height);
-      this.sceneCtx.restore();
-      return;
-    }
-
+  private drawGrunge(word: TimedWord, activeIndex: number, settings: StyleSettings) {
     const rendered = this.text.get(
       word.text,
       getWordColor(word, activeIndex, settings),
@@ -187,7 +167,6 @@ export class Visualizer {
       settings.fontWeight,
       settings.grit,
     );
-
     const maxWidth = this.width * 0.88;
     const maxHeight = this.height * 0.42;
     const fit = Math.min(
@@ -195,381 +174,498 @@ export class Visualizer {
       maxWidth / Math.max(1, rendered.logicalWidth),
       maxHeight / Math.max(1, rendered.logicalHeight),
     );
-    const width = rendered.logicalWidth * fit * animation.scale;
-    const height = rendered.logicalHeight * fit * animation.scale;
-
-    this.sceneCtx.save();
-    this.sceneCtx.globalAlpha = animation.alpha;
-    this.sceneCtx.translate(this.width / 2, this.height / 2);
-    if (settings.theme === "letterpress-ink") this.sceneCtx.rotate(-0.01);
-    if (settings.theme === "night-journal") this.sceneCtx.rotate(-0.003);
-    this.applyTextGlow(settings);
-    this.sceneCtx.drawImage(rendered.canvas, -width / 2, -height / 2, width, height);
-    this.sceneCtx.restore();
-  }
-
-  private drawLine(
-    line: LyricLine,
-    settings: StyleSettings,
-    options: LineDrawOptions,
-  ) {
-    if (line.words.length === 0) return;
-
-    const gap = this.text.spaceWidth(settings.fontSize, settings.fontWeight) * 0.72;
-    const cells: TextCell[] = line.words.map((word) => {
-      const active = word.id === options.activeWordId;
-      return {
-        word,
-        rendered: this.text.get(
-          word.text,
-          active ? this.accentColor(word, settings) : this.baseColor(word, settings),
-          settings.fontSize,
-          settings.fontWeight,
-          settings.grit,
-        ),
-        active,
-        alpha: active ? 1 : options.activeWordId ? 0.78 : 1,
-      };
-    });
-
-    let textWidth = 0;
-    let ascent = 0;
-    let descent = 0;
-    cells.forEach((cell, index) => {
-      textWidth += cell.rendered.textWidth;
-      if (index < cells.length - 1) textWidth += gap;
-      ascent = Math.max(ascent, cell.rendered.ascent);
-      descent = Math.max(descent, cell.rendered.descent);
-    });
-
-    const inkHeight = Math.max(1, ascent + descent);
-    const fit =
-      Math.min(
-        options.scaleCap,
-        options.maxWidth / Math.max(1, textWidth),
-        options.maxHeight / inkHeight,
-      ) * options.entrance.scale;
-
-    if (!Number.isFinite(fit) || fit <= 0) return;
-
-    const baseline =
-      options.centerY - ((ascent - descent) * fit) / 2;
-    let cursor = this.width / 2 - (textWidth * fit) / 2;
-
-    this.sceneCtx.save();
-    if (settings.theme === "letterpress-ink") {
-      this.sceneCtx.translate(this.width / 2, options.centerY);
-      this.sceneCtx.rotate(-0.01);
-      this.sceneCtx.translate(-this.width / 2, -options.centerY);
-    } else if (settings.theme === "night-journal") {
-      this.sceneCtx.translate(this.width / 2, options.centerY);
-      this.sceneCtx.rotate(-0.003);
-      this.sceneCtx.translate(-this.width / 2, -options.centerY);
-    }
-    this.applyTextGlow(settings);
-    cells.forEach((cell) => {
-      const drawX = cursor - cell.rendered.pad * fit;
-      const drawY = baseline - (cell.rendered.ascent + cell.rendered.pad) * fit;
-      this.sceneCtx.globalAlpha =
-        options.alpha * options.entrance.alpha * cell.alpha;
-      this.sceneCtx.drawImage(
-        cell.rendered.canvas,
-        drawX,
-        drawY,
-        cell.rendered.logicalWidth * fit,
-        cell.rendered.logicalHeight * fit,
-      );
-      cursor += (cell.rendered.textWidth + gap) * fit;
-    });
-    this.sceneCtx.restore();
-  }
-
-  private drawLineMode(
-    doc: LyricsDoc,
-    word: TimedWord,
-    settings: StyleSettings,
-    time: number,
-  ) {
-    const line = doc.lines[word.line];
-    if (!line) return;
-    const animation = animationState(settings.animation, Math.max(0, time - line.start));
-    this.drawLine(line, settings, {
-      activeWordId: word.id,
-      centerY: this.height * 0.5,
-      maxWidth: this.width * 0.9,
-      maxHeight: this.height * 0.31,
-      scaleCap: 1.22,
-      alpha: 1,
-      entrance: animation,
-    });
-  }
-
-  private drawStackMode(
-    doc: LyricsDoc,
-    word: TimedWord,
-    settings: StyleSettings,
-    time: number,
-  ) {
-    const line = doc.lines[word.line];
-    if (!line) return;
-    const previous = doc.lines[line.index - 1];
-    const next = doc.lines[line.index + 1];
-    const currentAnimation = animationState(
-      settings.animation,
-      Math.max(0, time - line.start),
-    );
-    const wide = this.width >= this.height;
-
-    if (previous) {
-      this.drawLine(previous, settings, {
-        centerY: this.height * (wide ? 0.28 : 0.3),
-        maxWidth: this.width * 0.72,
-        maxHeight: this.height * 0.09,
-        scaleCap: 0.58,
-        alpha: wide ? 0.24 : 0.21,
-        entrance: { scale: 1, alpha: 1 },
-      });
-    }
-
-    if (next) {
-      this.drawLine(next, settings, {
-        centerY: this.height * (wide ? 0.72 : 0.7),
-        maxWidth: this.width * 0.78,
-        maxHeight: this.height * 0.1,
-        scaleCap: 0.66,
-        alpha: 0.48,
-        entrance: { scale: 1, alpha: 1 },
-      });
-    }
-
-    this.drawLine(line, settings, {
-      activeWordId: word.id,
-      centerY: this.height * 0.5,
-      maxWidth: this.width * 0.9,
-      maxHeight: this.height * 0.23,
-      scaleCap: 0.98,
-      alpha: 1,
-      entrance: currentAnimation,
-    });
-  }
-
-  private textGlow(settings: StyleSettings) {
-    return {
-      "swiss-grid": { color: "rgba(17, 17, 17, 0.24)", blur: 0, offsetY: 0 },
-      "letterpress-ink": { color: "rgba(23, 18, 13, 0.24)", blur: 1, offsetY: 1 },
-      "riso-register": { color: settings.colorA, blur: 2, offsetY: 1 },
-      "analog-tuner": { color: settings.colorA, blur: 12, offsetY: 2 },
-      "night-journal": { color: settings.colorA, blur: 20, offsetY: 2 },
-      "acid-kinetic": { color: settings.colorA, blur: 4, offsetY: 2 },
-    }[settings.theme];
-  }
-
-  private applyTextGlow(settings: StyleSettings) {
-    const glow = this.textGlow(settings);
-    this.sceneCtx.shadowColor = glow.color;
-    this.sceneCtx.shadowBlur = glow.blur;
-    this.sceneCtx.shadowOffsetX = 0;
-    this.sceneCtx.shadowOffsetY = glow.offsetY;
-  }
-
-  private drawThemeDecor(settings: StyleSettings, activeIndex: number, time: number) {
+    const width = rendered.logicalWidth * fit;
+    const height = rendered.logicalHeight * fit;
     const ctx = this.sceneCtx;
-    const width = this.width;
-    const height = this.height;
-    const short = Math.min(width, height);
-    const rng = mulberry32(hashString(settings.theme));
-
-    switch (settings.theme) {
-      case "swiss-grid": {
-        const margin = short * 0.07;
-        const length = short * 0.075;
-        const corners: Array<[number, number, number, number]> = [
-          [margin, margin, 1, 1],
-          [width - margin, margin, -1, 1],
-          [margin, height - margin, 1, -1],
-          [width - margin, height - margin, -1, -1],
-        ];
-        ctx.save();
-        ctx.strokeStyle = settings.colorA;
-        ctx.globalAlpha = 0.48;
-        ctx.lineWidth = Math.max(1.5, short * 0.003);
-        corners.forEach(([x, y, dx, dy]) => {
-          ctx.beginPath();
-          ctx.moveTo(x, y + length * dy);
-          ctx.lineTo(x, y);
-          ctx.lineTo(x + length * dx, y);
-          ctx.stroke();
-        });
-        ctx.globalAlpha = 0.28;
-        ctx.lineWidth = 1;
-        const ticks = Math.floor(width / (short * 0.055));
-        for (let index = 0; index <= ticks; index += 1) {
-          const x = margin + ((width - margin * 2) * index) / Math.max(1, ticks);
-          const tickLength = short * (index % 5 === 0 ? 0.026 : 0.012);
-          ctx.beginPath();
-          ctx.moveTo(x, margin);
-          ctx.lineTo(x, margin + tickLength);
-          ctx.moveTo(x, height - margin);
-          ctx.lineTo(x, height - margin - tickLength);
-          ctx.stroke();
-        }
-        ctx.restore();
-        break;
-      }
-      case "letterpress-ink": {
-        const sealX = width * 0.86;
-        const sealY = height * 0.88;
-        const sealRadius = short * 0.055;
-        ctx.save();
-        ctx.strokeStyle = settings.colorA;
-        ctx.globalAlpha = 0.78;
-        ctx.lineWidth = Math.max(1.4, short * 0.003);
-        ctx.beginPath();
-        ctx.arc(sealX, sealY, sealRadius, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 0.11;
-        ctx.fillStyle = settings.colorA;
-        ctx.fill();
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = settings.colorA;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.font = `${Math.round(short * 0.034)}px "Rozha One", serif`;
-        ctx.fillText("राख़", sealX, sealY + short * 0.003);
-        ctx.globalAlpha = 0.36;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(width * 0.1, height * 0.09);
-        ctx.lineTo(width * 0.9, height * 0.09);
-        ctx.moveTo(width * 0.1, height * 0.91);
-        ctx.lineTo(width * 0.9, height * 0.91);
-        ctx.stroke();
-        ctx.restore();
-        break;
-      }
-      case "night-journal": {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        for (let ribbon = 0; ribbon < 4; ribbon += 1) {
-          const baseY = height * (0.27 + ribbon * 0.12);
-          const phase = rng() * Math.PI * 2;
-          ctx.strokeStyle = settings.colorA;
-          ctx.globalAlpha = 0.08 + ribbon * 0.015;
-          ctx.lineWidth = short * (0.012 + ribbon * 0.004);
-          ctx.beginPath();
-          for (let x = 0; x <= width; x += Math.max(10, short / 26)) {
-            const y = baseY + Math.sin(x / short * 3.1 + phase) * short * 0.045;
-            if (x === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 0.55;
-        ctx.strokeStyle = settings.colorB;
-        ctx.lineWidth = 1;
-        for (let index = 0; index < 18; index += 1) {
-          const x = rng() * width;
-          const y = rng() * height * 0.88;
-          const size = short * (0.004 + rng() * 0.008);
-          ctx.beginPath();
-          ctx.moveTo(x - size, y);
-          ctx.lineTo(x + size, y);
-          ctx.moveTo(x, y - size);
-          ctx.lineTo(x, y + size);
-          ctx.stroke();
-        }
-        ctx.restore();
-        break;
-      }
-      case "analog-tuner": {
-        const cx = width / 2;
-        const cy = height * 0.56;
-        const radius = short * 0.36;
-        const ticks = 9;
-        ctx.save();
-        ctx.strokeStyle = settings.colorB;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = Math.max(1, short * 0.0025);
-        for (let index = 0; index <= ticks; index += 1) {
-          const angle = Math.PI * (0.12 + (index / ticks) * 0.76);
-          const inner = radius * (index % 2 === 0 ? 0.82 : 0.9);
-          const outer = radius;
-          ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
-          ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 0.72;
-        ctx.strokeStyle = settings.colorA;
-        ctx.lineWidth = Math.max(2, short * 0.004);
-        const progress = activeIndex >= 0 ? Math.min(1, activeIndex / 24) : 0;
-        const angle = Math.PI * (0.12 + progress * 0.76);
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + Math.cos(angle) * radius * 0.76, cy + Math.sin(angle) * radius * 0.76);
-        ctx.stroke();
-        ctx.globalAlpha = 0.55;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius * 0.42, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-        break;
-      }
-      case "riso-register": {
-        const margin = short * 0.06;
-        const arm = short * 0.055;
-        const marks: Array<[number, number]> = [
-          [margin, margin],
-          [width - margin, margin],
-          [margin, height - margin],
-          [width - margin, height - margin],
-        ];
-        ctx.save();
-        ctx.strokeStyle = settings.colorB;
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = Math.max(1, short * 0.002);
-        marks.forEach(([x, y]) => {
-          ctx.beginPath();
-          ctx.moveTo(x - arm, y);
-          ctx.lineTo(x + arm, y);
-          ctx.moveTo(x, y - arm);
-          ctx.lineTo(x, y + arm);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(x, y, arm * 0.36, 0, Math.PI * 2);
-          ctx.stroke();
-        });
-        ctx.globalAlpha = 0.18;
-        ctx.setLineDash([short * 0.015, short * 0.02]);
-        ctx.beginPath();
-        ctx.moveTo(width * 0.08, height * 0.5);
-        ctx.lineTo(width * 0.92, height * 0.5);
-        ctx.stroke();
-        ctx.restore();
-        break;
-      }
-      default:
-        break;
-    }
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.drawImage(rendered.canvas, this.width / 2 - width / 2, this.height / 2 - height / 2, width, height);
+    ctx.restore();
   }
 
-  private drawLyrics(
+  // ------------------------------------------------------- 2. Karaoke Stage
+
+  private drawKaraoke(
     doc: LyricsDoc,
-    activeIndex: number,
-    word: TimedWord | null,
+    word: TimedWord,
     settings: StyleSettings,
     time: number,
   ) {
-    if (!word) return;
-    if (settings.lyricsMode === "line") {
-      this.drawLineMode(doc, word, settings, time);
-      return;
+    const ctx = this.sceneCtx;
+    const line = doc.lines[word.line];
+    if (!line) return;
+    const short = Math.min(this.width, this.height);
+
+    // Title, top left, small and quiet. The line below is the star.
+    if (doc.title) {
+      const label = doc.artist ? `${doc.title} · ${doc.artist}` : doc.title;
+      ctx.save();
+      this.setPlainFont(ctx, "sans", Math.round(short * 0.028), 700, 0.02);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
+      ctx.fillText(label, this.width * 0.06, this.height * 0.09);
+      ctx.restore();
     }
-    if (settings.lyricsMode === "stack") {
-      this.drawStackMode(doc, word, settings, time);
-      return;
+
+    const fontSize = settings.fontSize;
+    const gap = fontSize * 0.28;
+    const widths = line.words.map(
+      (w) => this.measurePlain(w.text, settings.fontFamily, fontSize, settings.fontWeight, settings.letterSpacing).width,
+    );
+    const totalWidth = widths.reduce((sum, w, i) => sum + w + (i > 0 ? gap : 0), 0);
+    const maxWidth = this.width * 0.86;
+    const scale = Math.min(1, maxWidth / Math.max(1, totalWidth));
+    const size = fontSize * scale;
+    const baseline = this.height * 0.74;
+    let cursor = this.width / 2 - (totalWidth * scale) / 2;
+
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    line.words.forEach((w, index) => {
+      const sung = w.start <= time;
+      const active = w.id === word.id;
+      this.setPlainFont(ctx, settings.fontFamily, size, settings.fontWeight, settings.letterSpacing);
+      ctx.fillStyle = sung ? settings.colorA : "rgba(255, 255, 255, 0.35)";
+      if (active) {
+        ctx.shadowColor = settings.colorA;
+        ctx.shadowBlur = 14;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+      ctx.fillText(w.text, cursor, baseline);
+      cursor += (widths[index] + gap) * scale;
+    });
+    ctx.shadowBlur = 0;
+
+    // Sweeping underline: the only motion in this preset.
+    const activeInLine = line.words.findIndex((w) => w.id === word.id);
+    const wordProgress = clamp(
+      (time - word.start) / Math.max(0.01, word.end - word.start),
+      0,
+      1,
+    );
+    const progress =
+      line.words.length === 0
+        ? 0
+        : (activeInLine + wordProgress) / line.words.length;
+    const trackY = baseline + size * 0.42;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+    ctx.fillRect(this.width / 2 - (totalWidth * scale) / 2, trackY, totalWidth * scale, Math.max(3, short * 0.004));
+    ctx.fillStyle = settings.colorA;
+    ctx.fillRect(
+      this.width / 2 - (totalWidth * scale) / 2,
+      trackY,
+      totalWidth * scale * progress,
+      Math.max(3, short * 0.004),
+    );
+
+    // Next line, faint, so the singer can see what is coming.
+    const next = doc.lines[line.index + 1];
+    if (next) {
+      const nextText = next.words.map((w) => w.text).join(" ");
+      let nextSize = size * 0.52;
+      let nextWidth = this.measurePlain(nextText, settings.fontFamily, nextSize, 700, settings.letterSpacing).width;
+      while (nextWidth > maxWidth && nextSize > 20) {
+        nextSize *= 0.9;
+        nextWidth = this.measurePlain(nextText, settings.fontFamily, nextSize, 700, settings.letterSpacing).width;
+      }
+      this.setPlainFont(ctx, settings.fontFamily, nextSize, 700, settings.letterSpacing);
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.fillText(nextText, this.width / 2, baseline + size * 1.05);
     }
-    this.drawWord(word, activeIndex, settings, time);
+    ctx.restore();
+  }
+
+  // ------------------------------------------------------- 3. Kinetic Collage
+
+  private drawKinetic(
+    doc: LyricsDoc,
+    word: TimedWord,
+    activeIndex: number,
+    settings: StyleSettings,
+    time: number,
+  ) {
+    const ctx = this.sceneCtx;
+    const start = Math.max(0, activeIndex - 4);
+    for (let index = start; index <= activeIndex; index += 1) {
+      const w = doc.words[index];
+      if (!w) continue;
+      const isActive = index === activeIndex;
+      const distance = activeIndex - index;
+      const rng = mulberry32(hashString(w.id));
+      const posX = this.width * (0.16 + rng() * 0.68);
+      const posY = this.height * (0.22 + rng() * 0.56);
+      let rotation = (rng() - 0.5) * 0.62;
+      const baseScale = isActive ? 1 : Math.max(0.45, 1 - distance * 0.15);
+      const alpha = isActive ? 1 : Math.max(0.26, 1 - distance * 0.18);
+
+      let entrance = 1;
+      if (isActive) {
+        const age = Math.max(0, time - w.start);
+        const progress = clamp(age / 0.22, 0, 1);
+        entrance = 1.55 - 0.55 * easeOutCubic(progress);
+        rotation *= 0.35 + 0.65 * progress;
+      }
+
+      const color = isActive ? settings.colorA : settings.colorB;
+      const size = Math.round(settings.fontSize * baseScale);
+      const rendered = this.text.get(w.text, color, size, settings.fontWeight, settings.grit);
+      const fit = Math.min(
+        1,
+        (this.width * 0.62) / Math.max(1, rendered.logicalWidth),
+        (this.height * 0.30) / Math.max(1, rendered.logicalHeight),
+      );
+      const drawW = rendered.logicalWidth * fit * entrance;
+      const drawH = rendered.logicalHeight * fit * entrance;
+      // Clamp the centre so a wide word can never run off the frame,
+      // even at a seeded position near an edge (seen in screenshots).
+      const margin = Math.min(this.width, this.height) * 0.05;
+      const clampedX = clamp(posX, drawW / 2 + margin, this.width - drawW / 2 - margin);
+      const clampedY = clamp(posY, drawH / 2 + margin, this.height - drawH / 2 - margin);
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(clampedX, clampedY);
+      ctx.rotate(rotation);
+      ctx.drawImage(rendered.canvas, -drawW / 2, -drawH / 2, drawW, drawH);
+      ctx.restore();
+    }
+  }
+
+  // ------------------------------------------------------- 4. Terminal Scroll
+
+  private drawTerminal(
+    doc: LyricsDoc,
+    word: TimedWord,
+    settings: StyleSettings,
+    time: number,
+  ) {
+    const ctx = this.sceneCtx;
+    const short = Math.min(this.width, this.height);
+    const activeLine = word.line;
+
+    ctx.save();
+    this.setPlainFont(ctx, "mono", Math.round(short * 0.026), 700, 0);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "rgba(77, 255, 136, 0.65)";
+    ctx.fillText("● ● ●   RAAKH // TRANSCRIPT", this.width * 0.06, this.height * 0.055);
+    ctx.restore();
+
+    const rowHeight = settings.fontSize * 1.55;
+    const startLine = Math.max(0, activeLine - 4);
+    const endLine = Math.min(doc.lines.length - 1, activeLine + 2);
+    const rows = doc.lines.slice(startLine, endLine + 1);
+    const totalHeight = rows.length * rowHeight;
+    const top = (this.height - totalHeight) / 2 + rowHeight * 0.55;
+
+    rows.forEach((line, rowIndex) => {
+      const isActive = line.index === activeLine;
+      const distance = Math.abs(line.index - activeLine);
+      const alpha = isActive ? 1 : line.index < activeLine ? Math.max(0.32, 0.92 - distance * 0.16) : 0.42;
+      const baseline = top + rowIndex * rowHeight;
+      const gutterX = this.width * 0.06;
+      const textX = this.width * 0.11;
+      const maxWidth = this.width * 0.84;
+
+      ctx.save();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      this.setPlainFont(ctx, settings.fontFamily, settings.fontSize, settings.fontWeight, settings.letterSpacing);
+      ctx.fillStyle = settings.colorA;
+      ctx.globalAlpha = alpha * 0.7;
+      ctx.fillText(isActive ? ">" : " ", gutterX, baseline);
+
+      // Fit the whole line, then draw word by word so the active line
+      // can show sung vs unsung words differently.
+      const gap = settings.fontSize * 0.26;
+      const widths = line.words.map(
+        (w) => this.measurePlain(w.text, settings.fontFamily, settings.fontSize, settings.fontWeight, settings.letterSpacing).width,
+      );
+      const total = widths.reduce((sum, w, i) => sum + w + (i > 0 ? gap : 0), 0);
+      const fit = Math.min(1, maxWidth / Math.max(1, total));
+      const size = settings.fontSize * fit;
+      this.setPlainFont(ctx, settings.fontFamily, size, settings.fontWeight, settings.letterSpacing);
+      let cursor = textX;
+      let sungCursor = textX;
+      line.words.forEach((w, i) => {
+        const sung = !isActive || line.index < activeLine || w.start <= time;
+        ctx.globalAlpha = isActive ? (sung ? 1 : 0.28) : alpha;
+        ctx.fillStyle = settings.colorA;
+        ctx.fillText(w.text, cursor, baseline);
+        cursor += (widths[i] + gap) * fit;
+        // The cursor belongs after the last SUNG word, not at the end
+        // of the line (a screenshot caught it sitting after "dar"
+        // while only "andhere" had been sung).
+        if (isActive && sung) sungCursor = cursor;
+      });
+
+      if (isActive) {
+        // Blinking block cursor after the last sung word.
+        const blink = Math.floor(time * 2) % 2 === 0;
+        if (blink) {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = settings.colorA;
+          ctx.fillRect(sungCursor + gap * fit * 0.4, baseline - size * 0.78, size * 0.55, size * 0.85);
+        }
+      }
+      ctx.restore();
+    });
+
+    // Footer: block progress bar, no smooth slider.
+    const progress = doc.lines.length > 0 ? activeLine / Math.max(1, doc.lines.length - 1) : 0;
+    const blocks = 22;
+    const filled = Math.round(progress * blocks);
+    ctx.save();
+    this.setPlainFont(ctx, "mono", Math.round(short * 0.026), 700, 0);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(77, 255, 136, 0.75)";
+    ctx.fillText(
+      `[${"█".repeat(filled)}${"░".repeat(blocks - filled)}] ${Math.round(progress * 100)}%`,
+      this.width * 0.06,
+      this.height * 0.95,
+    );
+    ctx.restore();
+  }
+
+  // ------------------------------------------------------- 5. Neon Sign
+
+  private drawNeon(word: TimedWord, settings: StyleSettings, time: number) {
+    const ctx = this.sceneCtx;
+    const short = Math.min(this.width, this.height);
+    const metrics = this.measurePlain(word.text, settings.fontFamily, settings.fontSize, settings.fontWeight, settings.letterSpacing);
+    const fit = Math.min(
+      1,
+      (this.width * 0.86) / Math.max(1, metrics.width),
+      (this.height * 0.38) / Math.max(1, metrics.ascent + metrics.descent),
+    );
+    const size = settings.fontSize * fit;
+    const cx = this.width / 2;
+    const cy = this.height * 0.42;
+    const seed = hash01(word.id);
+    const flicker = 0.88 + 0.12 * (0.5 + 0.5 * Math.sin(time * 9 + seed * 20));
+    const drop = Math.sin(time * 3.7 + seed * 40) > 0.97 ? 0.55 : 1;
+    const alpha = flicker * drop;
+
+    // Side neon bars: the sign is framed, not floating on black.
+    ctx.save();
+    ctx.strokeStyle = settings.colorB;
+    ctx.shadowColor = settings.colorB;
+    ctx.shadowBlur = short * 0.03;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = Math.max(3, short * 0.006);
+    ctx.beginPath();
+    ctx.moveTo(this.width * 0.07, this.height * 0.18);
+    ctx.lineTo(this.width * 0.07, this.height * 0.82);
+    ctx.moveTo(this.width * 0.93, this.height * 0.18);
+    ctx.lineTo(this.width * 0.93, this.height * 0.82);
+    ctx.stroke();
+    ctx.restore();
+
+    const drawOutline = (atY: number, a: number, glow: number) => {
+      ctx.save();
+      this.setPlainFont(ctx, settings.fontFamily, size, settings.fontWeight, settings.letterSpacing);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.globalAlpha = a;
+      ctx.shadowColor = settings.colorA;
+      ctx.shadowBlur = glow;
+      ctx.strokeStyle = settings.colorA;
+      ctx.lineWidth = Math.max(2, size * 0.035);
+      ctx.strokeText(word.text, cx, atY);
+      ctx.strokeText(word.text, cx, atY);
+      ctx.shadowBlur = glow * 0.25;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
+      ctx.lineWidth = Math.max(1, size * 0.011);
+      ctx.strokeText(word.text, cx, atY);
+      ctx.restore();
+    };
+
+    drawOutline(cy, alpha, short * 0.045);
+
+    // Reflection: the same outline, flipped, faded by erasing its own
+    // alpha (destination-out on an offscreen canvas). Painting a solid
+    // fade colour over the full width left a black band across the
+    // grid in screenshots, so no background-coloured rect is used here.
+    const reflectY = cy + (metrics.ascent + metrics.descent) * fit * 0.5 + short * 0.04;
+    const reflection = makeCanvas(this.width, this.height);
+    const reflectionCtx = reflection.getContext("2d");
+    if (reflectionCtx) {
+      reflectionCtx.save();
+      reflectionCtx.translate(0, reflectY * 2);
+      reflectionCtx.scale(1, -1);
+      this.setPlainFont(reflectionCtx, settings.fontFamily, size, settings.fontWeight, settings.letterSpacing);
+      reflectionCtx.textAlign = "center";
+      reflectionCtx.textBaseline = "middle";
+      reflectionCtx.globalAlpha = alpha * 0.22;
+      reflectionCtx.strokeStyle = settings.colorA;
+      reflectionCtx.lineWidth = Math.max(2, size * 0.035);
+      reflectionCtx.strokeText(word.text, cx, cy);
+      reflectionCtx.restore();
+
+      const textHeight = (metrics.ascent + metrics.descent) * fit;
+      const fade = reflectionCtx.createLinearGradient(0, reflectY, 0, reflectY + textHeight * 1.1);
+      fade.addColorStop(0, "rgba(0, 0, 0, 0)");
+      fade.addColorStop(1, "rgba(0, 0, 0, 1)");
+      reflectionCtx.save();
+      reflectionCtx.globalCompositeOperation = "destination-out";
+      reflectionCtx.fillStyle = fade;
+      reflectionCtx.fillRect(
+        cx - metrics.width * fit * 0.6,
+        reflectY,
+        metrics.width * fit * 1.2,
+        textHeight * 1.1,
+      );
+      reflectionCtx.restore();
+
+      ctx.save();
+      ctx.drawImage(reflection, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // ------------------------------------------------------- 6. Comic Pop
+
+  private drawComic(
+    doc: LyricsDoc,
+    word: TimedWord,
+    settings: StyleSettings,
+    time: number,
+  ) {
+    const ctx = this.sceneCtx;
+    const short = Math.min(this.width, this.height);
+
+    // Caption strip: the previous line, in a black bar on top.
+    const line = doc.lines[word.line];
+    const previous = line && line.index > 0 ? doc.lines[line.index - 1] : line;
+    const caption = previous ? previous.words.map((w) => w.text).join(" ") : "";
+    if (caption) {
+      ctx.save();
+      ctx.fillStyle = "#111111";
+      ctx.fillRect(0, 0, this.width, this.height * 0.09);
+      let capSize = short * 0.034;
+      let capWidth = this.measurePlain(caption, "grotesk", capSize, 700, 0).width;
+      while (capWidth > this.width * 0.9 && capSize > 18) {
+        capSize *= 0.9;
+        capWidth = this.measurePlain(caption, "grotesk", capSize, 700, 0).width;
+      }
+      this.setPlainFont(ctx, "grotesk", capSize, 700, 0);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(caption, this.width / 2, this.height * 0.045);
+      ctx.restore();
+    }
+
+    const drawBurst = (x: number, y: number, r: number) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.beginPath();
+      for (let i = 0; i < 24; i += 1) {
+        const angle = (i / 24) * Math.PI * 2;
+        const radius = i % 2 === 0 ? r : r * 0.55;
+        const px = Math.cos(angle) * radius;
+        const py = Math.sin(angle) * radius;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "#e8001d";
+      ctx.fill();
+      ctx.lineWidth = Math.max(3, short * 0.005);
+      ctx.strokeStyle = "#111111";
+      ctx.stroke();
+      ctx.restore();
+    };
+    drawBurst(this.width * 0.88, this.height * 0.20, short * 0.055);
+    drawBurst(this.width * 0.11, this.height * 0.83, short * 0.045);
+
+    // Speech bubble with overshoot pop and a decaying wobble.
+    const age = Math.max(0, time - word.start);
+    const progress = clamp(age / 0.28, 0, 1);
+    let pop: number;
+    if (progress < 0.6) pop = 0.62 + 0.46 * easeOutCubic(progress / 0.6);
+    else pop = 1.08 - 0.08 * easeOutCubic((progress - 0.6) / 0.4);
+    const wobble = Math.sin(age * 18) * 0.02 * (1 - progress);
+    const bubbleW = this.width * 0.84;
+    const bubbleH = this.height * 0.38;
+    const cx = this.width / 2;
+    const cy = this.height * 0.54;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(wobble);
+    ctx.scale(pop, pop);
+
+    // Tail first, so the bubble body covers its top edge.
+    ctx.beginPath();
+    ctx.moveTo(-bubbleW * 0.25, bubbleH / 2 - 2);
+    ctx.lineTo(-bubbleW * 0.16, bubbleH / 2 + bubbleH * 0.20);
+    ctx.lineTo(-bubbleW * 0.06, bubbleH / 2 - 2);
+    ctx.closePath();
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.lineWidth = Math.max(6, short * 0.009);
+    ctx.strokeStyle = "#111111";
+    ctx.stroke();
+
+    roundRectPath(ctx, -bubbleW / 2, -bubbleH / 2, bubbleW, bubbleH, short * 0.06);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.lineWidth = Math.max(7, short * 0.011);
+    ctx.strokeStyle = "#111111";
+    ctx.stroke();
+
+    // Clean heavy type inside the bubble. No distress, no outline.
+    const metrics = this.measurePlain(word.text, settings.fontFamily, settings.fontSize, settings.fontWeight, settings.letterSpacing);
+    const fit = Math.min(
+      1,
+      (bubbleW * 0.82) / Math.max(1, metrics.width),
+      (bubbleH * 0.68) / Math.max(1, metrics.ascent + metrics.descent),
+    );
+    const size = settings.fontSize * fit;
+    this.setPlainFont(ctx, settings.fontFamily, size, settings.fontWeight, settings.letterSpacing);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#111111";
+    ctx.fillText(word.text, 0, 0);
+    ctx.restore();
+  }
+
+  // ------------------------------------------------------- dispatch
+
+  private drawEngine(
+    doc: LyricsDoc,
+    word: TimedWord,
+    activeIndex: number,
+    settings: StyleSettings,
+    time: number,
+  ) {
+    const theme: VisualTheme = settings.theme;
+    switch (theme) {
+      case "karaoke-stage":
+        this.drawKaraoke(doc, word, settings, time);
+        break;
+      case "kinetic-collage":
+        this.drawKinetic(doc, word, activeIndex, settings, time);
+        break;
+      case "terminal-scroll":
+        this.drawTerminal(doc, word, settings, time);
+        break;
+      case "neon-sign":
+        this.drawNeon(word, settings, time);
+        break;
+      case "comic-pop":
+        this.drawComic(doc, word, settings, time);
+        break;
+      case "raakh-grunge":
+      default:
+        this.drawGrunge(word, activeIndex, settings);
+        break;
+    }
   }
 
   render(time: number, doc: LyricsDoc | null, settings: StyleSettings): RenderInfo {
@@ -594,14 +690,21 @@ export class Visualizer {
     this.sceneCtx.setTransform(1, 0, 0, 1, 0, 0);
     this.sceneCtx.globalAlpha = 1;
     this.sceneCtx.globalCompositeOperation = "source-over";
+    this.sceneCtx.shadowColor = "transparent";
+    this.sceneCtx.shadowBlur = 0;
+    this.sceneCtx.shadowOffsetX = 0;
+    this.sceneCtx.shadowOffsetY = 0;
     this.background.draw(this.sceneCtx, settings.background);
-    this.drawThemeDecor(settings, activeIndex, time);
 
-    if (doc) {
-      this.drawLyrics(doc, activeIndex, word, settings, time);
+    if (doc && word) {
+      this.drawEngine(doc, word, activeIndex, settings, time);
     }
 
-    if (activeIndex !== this.lastActive) {
+    // Rain and glitch belong ONLY to Raakh Grunge. The other five presets
+    // set rain: 0 and glitch: 0 in their definitions, and this gate makes
+    // that a code fact, not just a preset value.
+    const isGrunge = settings.theme === "raakh-grunge";
+    if (isGrunge && activeIndex !== this.lastActive) {
       const previous = this.lastActive;
       this.lastActive = activeIndex;
 
@@ -620,10 +723,16 @@ export class Visualizer {
           };
         }
       }
+    } else if (!isGrunge) {
+      this.lastActive = activeIndex;
+      this.glitchEvent = null;
+    } else {
+      this.lastActive = activeIndex;
     }
 
     const glitching = Boolean(
-      this.glitchEvent &&
+      isGrunge &&
+        this.glitchEvent &&
         time >= this.glitchEvent.start &&
         time < this.glitchEvent.start + this.glitchEvent.duration,
     );
@@ -644,6 +753,7 @@ export class Visualizer {
     this.ctx.globalAlpha = 1;
     this.ctx.globalCompositeOperation = "source-over";
     this.ctx.drawImage(source, 0, 0);
+    // RainSystem no-ops at intensity 0, so this is only visible on grunge.
     this.rain.render(this.ctx, source, time);
 
     return {

@@ -4,21 +4,30 @@ import { VISUAL_THEMES, themePreset, visualTheme } from "../lib/render/themes";
 import { cn } from "./ui";
 
 const THEME_SWATCH: Record<VisualTheme, string> = {
-  "swiss-grid": "linear-gradient(135deg, #f4f1e8 0%, #dcd6ca 58%, #e8001d 150%)",
-  "letterpress-ink": "linear-gradient(135deg, #e8dcc8 0%, #d9c49d 58%, #8f1d16 130%)",
-  "riso-register": "linear-gradient(135deg, #070707 0%, #1a0b16 58%, #ff4da6 130%)",
-  "analog-tuner": "linear-gradient(135deg, #130609 0%, #431014 58%, #ffb04a 120%)",
-  "night-journal": "linear-gradient(135deg, #020608 0%, #063033 58%, #8ff5c3 120%)",
-  "acid-kinetic": "linear-gradient(135deg, #050505 0%, #patient 58%, #d7ff00 130%)",
+  "raakh-grunge": "linear-gradient(135deg, #000000 0%, #1a0505 58%, #ff252b 130%)",
+  "karaoke-stage": "linear-gradient(135deg, #0a0f1e 0%, #101828 58%, #ffd60a 130%)",
+  "kinetic-collage": "linear-gradient(135deg, #f2ead8 0%, #e8ddc2 58%, #e8001d 130%)",
+  "terminal-scroll": "linear-gradient(135deg, #030805 0%, #0a2412 58%, #4dff88 130%)",
+  "neon-sign": "linear-gradient(135deg, #0b0221 0%, #1b0b3a 58%, #00e5ff 130%)",
+  "comic-pop": "linear-gradient(135deg, #ffcf00 0%, #ffbf00 58%, #e8001d 130%)",
 };
 
 const FONT_SAMPLE: Record<VisualTheme, string> = {
-  "swiss-grid": '"Noto Sans Devanagari Variable", sans-serif',
-  "letterpress-ink": '"Rozha One", serif',
-  "riso-register": '"Noto Sans Devanagari Variable", sans-serif',
-  "analog-tuner": '"Yatra One", sans-serif',
-  "night-journal": '"Kalam", sans-serif',
-  "acid-kinetic": '"Noto Sans Devanagari Variable", sans-serif',
+  "raakh-grunge": '"Noto Sans Devanagari Variable", sans-serif',
+  "karaoke-stage": '"Noto Sans Devanagari Variable", sans-serif',
+  "kinetic-collage": '"Noto Sans Devanagari Variable", sans-serif',
+  "terminal-scroll": '"JetBrains Mono Variable", monospace',
+  "neon-sign": '"Noto Sans Devanagari Variable", sans-serif',
+  "comic-pop": '"Noto Sans Devanagari Variable", sans-serif',
+};
+
+const SAMPLE_COLOR: Record<VisualTheme, string> = {
+  "raakh-grunge": "#f4f1e8",
+  "karaoke-stage": "#ffd60a",
+  "kinetic-collage": "#111111",
+  "terminal-scroll": "#4dff88",
+  "neon-sign": "#00e5ff",
+  "comic-pop": "#111111",
 };
 
 interface LookPanelProps {
@@ -37,13 +46,19 @@ export function LookPanel({ style, onChange }: LookPanelProps) {
             Presets
           </div>
           <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-bone">
-            Six finished worlds
+            Six different engines
           </h2>
         </div>
         <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-dim">
           {VISUAL_THEMES.length} / no sliders
         </span>
       </div>
+
+      <p className="text-[11px] leading-relaxed text-muted">
+        Each preset is a different way of reading a song, not a different
+        colour on the same layout. Layout, reading unit and motion all
+        change when you switch.
+      </p>
 
       <div className="space-y-2">
         {VISUAL_THEMES.map((theme) => {
@@ -68,9 +83,8 @@ export function LookPanel({ style, onChange }: LookPanelProps) {
                 <span
                   className="select-none text-[26px] font-bold tracking-[0.18em]"
                   style={{
-                    color: theme.colorB,
+                    color: SAMPLE_COLOR[theme.value],
                     fontFamily: FONT_SAMPLE[theme.value],
-                    textTransform: theme.value === "swiss-grid" ? undefined : undefined,
                   }}
                 >
                   <span style={{ color: theme.colorA }}>रा</span>ख़
@@ -106,16 +120,13 @@ export function LookPanel({ style, onChange }: LookPanelProps) {
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="rounded-sm bg-white/[0.04] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-dim">
-                    {theme.lyricsMode}
+                    Layout: {theme.layout}
                   </span>
                   <span className="rounded-sm bg-white/[0.04] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-dim">
-                    {theme.animation}
+                    Reading: {theme.reading}
                   </span>
                   <span className="rounded-sm bg-white/[0.04] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-dim">
-                    rain {theme.rain}%
-                  </span>
-                  <span className="rounded-sm bg-white/[0.04] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-dim">
-                    grit {theme.grit}%
+                    Motion: {theme.motion}
                   </span>
                 </div>
               </div>

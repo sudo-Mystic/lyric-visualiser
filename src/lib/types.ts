@@ -1,24 +1,23 @@
 export type ColorMode = "alternate" | "red" | "white" | "custom";
 export type BackgroundMode =
-  | "black"
-  | "blood"
-  | "paper"
-  | "swiss"
-  | "aurora"
-  | "dusk"
-  | "signal";
-export type WordAnimation = "cut" | "pop" | "fade";
+  | "grunge"
+  | "stage"
+  | "collage-paper"
+  | "terminal"
+  | "neon-night"
+  | "comic-dots";
+export type WordAnimation = "cut" | "pop" | "fade" | "slam" | "steady";
 export type FontWeight = 400 | 700 | 800 | 900;
 export type LyricsOrigin = "lrc" | "plain" | "lrclib" | "manual";
 export type CanvasFormat = "story" | "portrait" | "square" | "landscape";
-export type LyricsMode = "word" | "line" | "stack";
+export type LyricsMode = "word" | "line" | "stack" | "scroll" | "collage";
 export type VisualTheme =
-  | "swiss-grid"
-  | "letterpress-ink"
-  | "riso-register"
-  | "analog-tuner"
-  | "night-journal"
-  | "acid-kinetic";
+  | "raakh-grunge"
+  | "karaoke-stage"
+  | "kinetic-collage"
+  | "terminal-scroll"
+  | "neon-sign"
+  | "comic-pop";
 export type CanvasFont = "grotesk" | "rozha" | "mono" | "yatra" | "kalam" | "sans";
 
 export interface StyleSettings {
@@ -40,13 +39,19 @@ export interface StyleSettings {
   letterSpacing: number;
 }
 
+/**
+ * The original reference look: the @shivu_edtix reel. Black, one distressed
+ * Devanagari word at a time in the centre, rain on glass, glitch slices.
+ * It is kept as exactly one of the six presets, not as the template for
+ * the other five.
+ */
 export const REFERENCE_STYLE: StyleSettings = {
   colorMode: "alternate",
   colorA: "#ff252b",
   colorB: "#f4f1e8",
   fontSize: 210,
   fontWeight: 900,
-  background: "black",
+  background: "grunge",
   rain: 58,
   glitch: 42,
   grit: 64,
@@ -54,7 +59,7 @@ export const REFERENCE_STYLE: StyleSettings = {
   offsetMs: 0,
   canvasFormat: "story",
   lyricsMode: "word",
-  theme: "swiss-grid",
+  theme: "raakh-grunge",
   fontFamily: "grotesk",
   letterSpacing: 0,
 };
