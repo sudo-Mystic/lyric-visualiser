@@ -20,12 +20,16 @@ describe("visual themes", () => {
       background: "paper",
       colorA: "#a42318",
       colorB: "#17120d",
+      fontFamily: "rozha",
+      canvasFormat: "portrait",
+      lyricsMode: "stack",
       rain: 0,
     });
 
     const signal = themePreset("ink-signal");
     expect(signal.glitch).toBeGreaterThan(70);
+    expect(signal.canvasFormat).toBe("portrait");
 
-    expect(visualTheme("aurora").label).toBe("Aurora");
+    expect(visualTheme("aurora").label).toBe("Aurora Ribbon");
   });
 });

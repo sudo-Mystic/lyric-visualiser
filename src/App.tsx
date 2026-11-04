@@ -24,6 +24,7 @@ import {
   type LyricsQuery,
 } from "./lib/lyrics";
 import { sessionKey } from "./lib/nowPlaying";
+import { themePreset } from "./lib/render/themes";
 import { getActiveWordIndex } from "./lib/timing";
 import { REFERENCE_STYLE, type LyricsDoc, type StyleSettings } from "./lib/types";
 
@@ -35,8 +36,13 @@ const AUTO_KEY = "raakh.autofetch.v1";
 function loadStyle(): StyleSettings {
   try {
     const raw = localStorage.getItem(STYLE_KEY);
-    if (!raw) return REFERENCE_STYLE;
-    return { ...REFERENCE_STYLE, ...(JSON.parse(raw) as Partial<StyleSettings>) };
+    const stored = raw ? (JSON.parse(raw) as Partial<StyleSettings>) : {};
+    const preset = themePreset(stored.theme ?? REFERENCE_STYLE.theme);
+    return {
+      ...REFERENCE_STYLE,
+      ...preset,
+      offsetMs: stored.offsetMs ?? REFERENCE_STYLE.offsetMs,
+    };
   } catch {
     return REFERENCE_STYLE;
   }
@@ -538,11 +544,7 @@ export default function App() {
         fetching={fetchingLyrics}
       />
     ) : (
-      <LookPanel
-        style={style}
-        onChange={updateStyle}
-        onReset={() => setStyle(REFERENCE_STYLE)}
-      />
+      <LookPanel style={style} onChange={updateStyle} />
     );
 
   return (
