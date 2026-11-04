@@ -1,0 +1,39 @@
+{
+  "name": "lyric-visualiser",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "serve": "npm run build && vite preview",
+    "bridge": "node bridge/server.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/noto-sans": "^5.3.0",
+    "@fontsource-variable/noto-sans-devanagari": "^5.3.0",
+    "@fontsource/kalam": "^5.3.0",
+    "@fontsource/rozha-one": "^5.3.0",
+    "@fontsource/yatra-one": "^5.3.0",
+    "lucide-react": "^1.68.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "tailwindcss": "^4.3.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}
