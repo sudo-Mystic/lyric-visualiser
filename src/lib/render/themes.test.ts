@@ -4,21 +4,21 @@ import { VISUAL_THEMES, themePreset, visualTheme } from "./themes";
 describe("visual themes", () => {
   it("contains six distinct themes", () => {
     expect(VISUAL_THEMES.map((theme) => theme.value)).toEqual([
-      "obsidian",
-      "neon-monsoon",
-      "papyrus",
-      "aurora",
-      "ember-dusk",
-      "ink-signal",
+      "swiss-grid",
+      "letterpress-ink",
+      "riso-register",
+      "analog-tuner",
+      "night-journal",
+      "acid-kinetic",
     ]);
   });
 
   it("turns each theme into a style patch", () => {
-    const papyrus = themePreset("papyrus");
-    expect(papyrus).toMatchObject({
-      theme: "papyrus",
+    const letterpress = themePreset("letterpress-ink");
+    expect(letterpress).toMatchObject({
+      theme: "letterpress-ink",
       background: "paper",
-      colorA: "#a42318",
+      colorA: "#8f1d16",
       colorB: "#17120d",
       fontFamily: "rozha",
       canvasFormat: "portrait",
@@ -26,10 +26,10 @@ describe("visual themes", () => {
       rain: 0,
     });
 
-    const signal = themePreset("ink-signal");
-    expect(signal.glitch).toBeGreaterThan(70);
-    expect(signal.canvasFormat).toBe("portrait");
+    const acid = themePreset("acid-kinetic");
+    expect(acid.glitch).toBeGreaterThan(40);
+    expect(acid.canvasFormat).toBe("landscape");
 
-    expect(visualTheme("aurora").label).toBe("Aurora Ribbon");
+    expect(visualTheme("night-journal").label).toBe("Night Journal");
   });
 });

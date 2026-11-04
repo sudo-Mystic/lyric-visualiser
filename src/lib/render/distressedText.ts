@@ -4,6 +4,7 @@ import { clamp, hashString, mulberry32 } from "./random";
 const SUPERSAMPLE = 1.5;
 const CACHE_LIMIT = 72;
 export const FONT_STACKS: Record<CanvasFont, string> = {
+  grotesk: '"Noto Sans Devanagari Variable", "Noto Sans Variable", sans-serif',
   sans: '"Noto Sans Devanagari Variable", "Noto Sans Variable", sans-serif',
   mono: '"JetBrains Mono Variable", "Noto Sans Devanagari Variable", monospace',
   rozha: '"Rozha One", "Noto Sans Devanagari Variable", serif',
@@ -32,7 +33,7 @@ export class DistressedTextRenderer {
   private cache = new Map<string, RenderedWord>();
   private measureCanvas = makeCanvas(8, 8);
   private measureContext = this.measureCanvas.getContext("2d");
-  private fontFamily: CanvasFont = "sans";
+  private fontFamily: CanvasFont = "grotesk";
   private letterSpacing = 0;
 
   setTypography(family: CanvasFont, letterSpacing: number) {

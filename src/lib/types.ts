@@ -3,7 +3,7 @@ export type BackgroundMode =
   | "black"
   | "blood"
   | "paper"
-  | "monsoon"
+  | "swiss"
   | "aurora"
   | "dusk"
   | "signal";
@@ -13,13 +13,13 @@ export type LyricsOrigin = "lrc" | "plain" | "lrclib" | "manual";
 export type CanvasFormat = "story" | "portrait" | "square" | "landscape";
 export type LyricsMode = "word" | "line" | "stack";
 export type VisualTheme =
-  | "obsidian"
-  | "neon-monsoon"
-  | "papyrus"
-  | "aurora"
-  | "ember-dusk"
-  | "ink-signal";
-export type CanvasFont = "sans" | "mono" | "rozha" | "kalam" | "yatra";
+  | "swiss-grid"
+  | "letterpress-ink"
+  | "riso-register"
+  | "analog-tuner"
+  | "night-journal"
+  | "acid-kinetic";
+export type CanvasFont = "grotesk" | "rozha" | "mono" | "yatra" | "kalam" | "sans";
 
 export interface StyleSettings {
   colorMode: ColorMode;
@@ -54,8 +54,8 @@ export const REFERENCE_STYLE: StyleSettings = {
   offsetMs: 0,
   canvasFormat: "story",
   lyricsMode: "word",
-  theme: "obsidian",
-  fontFamily: "sans",
+  theme: "swiss-grid",
+  fontFamily: "grotesk",
   letterSpacing: 0,
 };
 

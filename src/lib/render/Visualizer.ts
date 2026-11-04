@@ -142,6 +142,44 @@ export class Visualizer {
   ) {
     const age = Math.max(0, time - word.start);
     const animation = animationState(settings.animation, age);
+
+    if (settings.theme === "riso-register") {
+      const pink = this.text.get(
+        word.text,
+        settings.colorA,
+        settings.fontSize,
+        settings.fontWeight,
+        settings.grit,
+      );
+      const teal = this.text.get(
+        word.text,
+        settings.colorB,
+        settings.fontSize,
+        settings.fontWeight,
+        settings.grit,
+      );
+      const offset = Math.min(this.width, this.height) * 0.012;
+      const maxWidth = this.width * 0.88;
+      const maxHeight = this.height * 0.42;
+      const fit = Math.min(
+        1,
+        maxWidth / Math.max(1, pink.logicalWidth),
+        maxHeight / Math.max(1, pink.logicalHeight),
+      );
+      const width = pink.logicalWidth * fit;
+      const height = pink.logicalHeight * fit;
+
+      this.sceneCtx.save();
+      this.sceneCtx.translate(this.width / 2, this.height / 2);
+      this.sceneCtx.scale(animation.scale, animation.scale);
+      this.sceneCtx.globalAlpha = animation.alpha;
+      this.applyTextGlow(settings);
+      this.sceneCtx.drawImage(teal.canvas, -width / 2 + offset, -height / 2 + offset * 0.35, width, height);
+      this.sceneCtx.drawImage(pink.canvas, -width / 2 - offset * 0.6, -height / 2 - offset * 0.28, width, height);
+      this.sceneCtx.restore();
+      return;
+    }
+
     const rendered = this.text.get(
       word.text,
       getWordColor(word, activeIndex, settings),
@@ -163,8 +201,8 @@ export class Visualizer {
     this.sceneCtx.save();
     this.sceneCtx.globalAlpha = animation.alpha;
     this.sceneCtx.translate(this.width / 2, this.height / 2);
-    if (settings.theme === "papyrus") this.sceneCtx.rotate(-0.01);
-    if (settings.theme === "aurora") this.sceneCtx.rotate(-0.003);
+    if (settings.theme === "letterpress-ink") this.sceneCtx.rotate(-0.01);
+    if (settings.theme === "night-journal") this.sceneCtx.rotate(-0.003);
     this.applyTextGlow(settings);
     this.sceneCtx.drawImage(rendered.canvas, -width / 2, -height / 2, width, height);
     this.sceneCtx.restore();
@@ -219,11 +257,11 @@ export class Visualizer {
     let cursor = this.width / 2 - (textWidth * fit) / 2;
 
     this.sceneCtx.save();
-    if (settings.theme === "papyrus") {
+    if (settings.theme === "letterpress-ink") {
       this.sceneCtx.translate(this.width / 2, options.centerY);
       this.sceneCtx.rotate(-0.01);
       this.sceneCtx.translate(-this.width / 2, -options.centerY);
-    } else if (settings.theme === "aurora") {
+    } else if (settings.theme === "night-journal") {
       this.sceneCtx.translate(this.width / 2, options.centerY);
       this.sceneCtx.rotate(-0.003);
       this.sceneCtx.translate(-this.width / 2, -options.centerY);
@@ -317,12 +355,12 @@ export class Visualizer {
 
   private textGlow(settings: StyleSettings) {
     return {
-      obsidian: { color: settings.colorA, blur: 2, offsetY: 1 },
-      "neon-monsoon": { color: settings.colorA, blur: 6, offsetY: 1 },
-      papyrus: { color: "rgba(23, 18, 13, 0.24)", blur: 1, offsetY: 1 },
-      aurora: { color: settings.colorA, blur: 24, offsetY: 2 },
-      "ember-dusk": { color: settings.colorA, blur: 10, offsetY: 2 },
-      "ink-signal": { color: settings.colorA, blur: 4, offsetY: 1 },
+      "swiss-grid": { color: "rgba(17, 17, 17, 0.24)", blur: 0, offsetY: 0 },
+      "letterpress-ink": { color: "rgba(23, 18, 13, 0.24)", blur: 1, offsetY: 1 },
+      "riso-register": { color: settings.colorA, blur: 2, offsetY: 1 },
+      "analog-tuner": { color: settings.colorA, blur: 12, offsetY: 2 },
+      "night-journal": { color: settings.colorA, blur: 20, offsetY: 2 },
+      "acid-kinetic": { color: settings.colorA, blur: 4, offsetY: 2 },
     }[settings.theme];
   }
 
@@ -342,7 +380,7 @@ export class Visualizer {
     const rng = mulberry32(hashString(settings.theme));
 
     switch (settings.theme) {
-      case "neon-monsoon": {
+      case "swiss-grid": {
         const margin = short * 0.07;
         const length = short * 0.075;
         const corners: Array<[number, number, number, number]> = [
@@ -378,7 +416,7 @@ export class Visualizer {
         ctx.restore();
         break;
       }
-      case "papyrus": {
+      case "letterpress-ink": {
         const sealX = width * 0.86;
         const sealY = height * 0.88;
         const sealRadius = short * 0.055;
@@ -409,7 +447,7 @@ export class Visualizer {
         ctx.restore();
         break;
       }
-      case "aurora": {
+      case "night-journal": {
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
         for (let ribbon = 0; ribbon < 4; ribbon += 1) {
@@ -443,48 +481,70 @@ export class Visualizer {
         ctx.restore();
         break;
       }
-      case "ember-dusk": {
+      case "analog-tuner": {
+        const cx = width / 2;
+        const cy = height * 0.56;
+        const radius = short * 0.36;
+        const ticks = 9;
         ctx.save();
-        for (let index = 0; index < 22; index += 1) {
-          const seed = rng();
-          const x = rng() * width;
-          const rise = (0.72 - seed * 0.08) * height;
-          const phase = rng() * rise;
-          const travel = (phase + time * (height * (0.018 + seed * 0.035))) % rise;
-          const y = height * 0.94 - travel;
-          const radius = 0.8 + seed * 2.4;
-          ctx.globalAlpha = 0.12 + seed * 0.34;
-          ctx.fillStyle = seed > 0.55 ? settings.colorA : "#ff6a2a";
+        ctx.strokeStyle = settings.colorB;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(1, short * 0.0025);
+        for (let index = 0; index <= ticks; index += 1) {
+          const angle = Math.PI * (0.12 + (index / ticks) * 0.76);
+          const inner = radius * (index % 2 === 0 ? 0.82 : 0.9);
+          const outer = radius;
           ctx.beginPath();
-          ctx.arc(x, y, radius, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+          ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+          ctx.stroke();
         }
+        ctx.globalAlpha = 0.72;
+        ctx.strokeStyle = settings.colorA;
+        ctx.lineWidth = Math.max(2, short * 0.004);
+        const progress = activeIndex >= 0 ? Math.min(1, activeIndex / 24) : 0;
+        const angle = Math.PI * (0.12 + progress * 0.76);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(angle) * radius * 0.76, cy + Math.sin(angle) * radius * 0.76);
+        ctx.stroke();
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.42, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.restore();
         break;
       }
-      case "ink-signal": {
-        const trackX = Math.min(width, height) * 0.065;
-        const blocks = Math.max(6, Math.floor(height / (short * 0.055)));
+      case "riso-register": {
+        const margin = short * 0.06;
+        const arm = short * 0.055;
+        const marks: Array<[number, number]> = [
+          [margin, margin],
+          [width - margin, margin],
+          [margin, height - margin],
+          [width - margin, height - margin],
+        ];
         ctx.save();
-        ctx.fillStyle = settings.colorB;
-        ctx.globalAlpha = 0.16;
-        ctx.fillRect(trackX, height * 0.18, 1.5, height * 0.64);
-        const activeSide = activeIndex >= 0 ? activeIndex % blocks : -1;
-        for (let index = 0; index < blocks; index += 1) {
-          const y = height * 0.2 + (index / blocks) * height * 0.6;
-          const filled = index <= activeSide;
-          ctx.globalAlpha = filled ? 0.72 : 0.18;
-          ctx.fillStyle = filled ? settings.colorA : settings.colorB;
-          ctx.fillRect(trackX - 3, y, 7, 3);
-        }
-        const scanY = (time * short * 0.12) % height;
-        const gradient = ctx.createLinearGradient(0, scanY, 0, scanY + short * 0.12);
-        gradient.addColorStop(0, "rgba(0, 229, 255, 0)");
-        gradient.addColorStop(0.55, "rgba(0, 229, 255, 0.12)");
-        gradient.addColorStop(1, "rgba(0, 229, 255, 0)");
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, scanY, width, short * 0.12);
+        ctx.strokeStyle = settings.colorB;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = Math.max(1, short * 0.002);
+        marks.forEach(([x, y]) => {
+          ctx.beginPath();
+          ctx.moveTo(x - arm, y);
+          ctx.lineTo(x + arm, y);
+          ctx.moveTo(x, y - arm);
+          ctx.lineTo(x, y + arm);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(x, y, arm * 0.36, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.globalAlpha = 0.18;
+        ctx.setLineDash([short * 0.015, short * 0.02]);
+        ctx.beginPath();
+        ctx.moveTo(width * 0.08, height * 0.5);
+        ctx.lineTo(width * 0.92, height * 0.5);
+        ctx.stroke();
         ctx.restore();
         break;
       }

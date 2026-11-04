@@ -4,21 +4,21 @@ import { VISUAL_THEMES, themePreset, visualTheme } from "../lib/render/themes";
 import { cn } from "./ui";
 
 const THEME_SWATCH: Record<VisualTheme, string> = {
-  "obsidian": "linear-gradient(135deg, #050505 0%, #191919 58%, #3a0507 100%)",
-  "neon-monsoon": "linear-gradient(135deg, #08151c 0%, #0c2a36 58%, #1a6675 100%)",
-  "papyrus": "linear-gradient(135deg, #e8dcc8 0%, #d9c49d 58%, #a42318 130%)",
-  "aurora": "linear-gradient(135deg, #020608 0%, #063033 58%, #15966a 115%)",
-  "ember-dusk": "linear-gradient(135deg, #130609 0%, #431014 58%, #8e2517 100%)",
-  "ink-signal": "linear-gradient(135deg, #040710 0%, #10255d 58%, #00e5ff 125%)",
+  "swiss-grid": "linear-gradient(135deg, #f4f1e8 0%, #dcd6ca 58%, #e8001d 150%)",
+  "letterpress-ink": "linear-gradient(135deg, #e8dcc8 0%, #d9c49d 58%, #8f1d16 130%)",
+  "riso-register": "linear-gradient(135deg, #070707 0%, #1a0b16 58%, #ff4da6 130%)",
+  "analog-tuner": "linear-gradient(135deg, #130609 0%, #431014 58%, #ffb04a 120%)",
+  "night-journal": "linear-gradient(135deg, #020608 0%, #063033 58%, #8ff5c3 120%)",
+  "acid-kinetic": "linear-gradient(135deg, #050505 0%, #patient 58%, #d7ff00 130%)",
 };
 
 const FONT_SAMPLE: Record<VisualTheme, string> = {
-  "obsidian": '"Noto Sans Devanagari Variable", sans-serif',
-  "neon-monsoon": '"JetBrains Mono Variable", monospace',
-  "papyrus": '"Rozha One", serif',
-  "aurora": '"Kalam", sans-serif',
-  "ember-dusk": '"Yatra One", sans-serif',
-  "ink-signal": '"JetBrains Mono Variable", monospace',
+  "swiss-grid": '"Noto Sans Devanagari Variable", sans-serif',
+  "letterpress-ink": '"Rozha One", serif',
+  "riso-register": '"Noto Sans Devanagari Variable", sans-serif',
+  "analog-tuner": '"Yatra One", sans-serif',
+  "night-journal": '"Kalam", sans-serif',
+  "acid-kinetic": '"Noto Sans Devanagari Variable", sans-serif',
 };
 
 interface LookPanelProps {
@@ -70,7 +70,7 @@ export function LookPanel({ style, onChange }: LookPanelProps) {
                   style={{
                     color: theme.colorB,
                     fontFamily: FONT_SAMPLE[theme.value],
-                    textTransform: theme.value === "neon-monsoon" ? "uppercase" : undefined,
+                    textTransform: theme.value === "swiss-grid" ? undefined : undefined,
                   }}
                 >
                   <span style={{ color: theme.colorA }}>रा</span>ख़

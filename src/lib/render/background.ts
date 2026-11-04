@@ -8,6 +8,53 @@ function makeCanvas(width: number, height: number) {
   return canvas;
 }
 
+function paintSwiss(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  const short = Math.min(width, height);
+  const area = width * height;
+  const rng = mulberry32(0x010203);
+  ctx.fillStyle = "#f4f1e8";
+  ctx.fillRect(0, 0, width, height);
+
+  const stepX = width / 6;
+  const stepY = height / 8;
+  ctx.strokeStyle = "rgba(17, 17, 17, 0.24)";
+  ctx.lineWidth = 1;
+  for (let x = stepX; x < width; x += stepX) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let y = stepY; y < height; y += stepY) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  for (let index = 0; index < Math.round(area / 340); index += 1) {
+    const x = rng() * width;
+    const y = rng() * height;
+    const size = rng() < 0.94 ? rng() * 1.5 : 1 + rng() * 3.5;
+    ctx.fillStyle = rng() > 0.45 ? "rgba(17, 17, 17, 0.045)" : "rgba(255, 255, 255, 0.05)";
+    ctx.fillRect(x, y, size, size);
+  }
+
+  const left = width * 0.06;
+  const right = width * 0.94;
+  const top = height * 0.09;
+  const bottom = height * 0.93;
+  ctx.strokeStyle = "rgba(17, 17, 17, 0.82)";
+  ctx.lineWidth = Math.max(1.5, short * 0.003);
+  ctx.strokeRect(left, top, right - left, bottom - top);
+  ctx.strokeStyle = "rgba(232, 0, 29, 0.82)";
+  ctx.lineWidth = Math.max(1, short * 0.002);
+  ctx.beginPath();
+  ctx.moveTo(left, top + short * 0.06);
+  ctx.lineTo(right, top + short * 0.06);
+  ctx.stroke();
+}
+
 function paintVignette(ctx: CanvasRenderingContext2D, width: number, height: number, alpha = 0.58) {
   const short = Math.min(width, height);
   const long = Math.max(width, height);
@@ -380,17 +427,14 @@ function createThemeBackground(width: number, height: number, mode: BackgroundMo
     case "blood":
       paintBlood(ctx, width, height);
       break;
-    case "monsoon":
-      paintMonsoon(ctx, width, height);
+    case "swiss":
+      paintSwiss(ctx, width, height);
       break;
     case "aurora":
       paintAurora(ctx, width, height);
       break;
     case "dusk":
       paintDusk(ctx, width, height);
-      break;
-    case "signal":
-      paintSignal(ctx, width, height);
       break;
     case "black":
     default:
